@@ -1,0 +1,32 @@
+node_modules/
+dist/
+
+# Local environment and credentials
+.env*
+!.env.example
+
+# Test and build output
+coverage/
+playwright-report/
+test-results/
+blob-report/
+.cache/
+.npm/
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts
+
+# Manyfold / Sprite workspace metadata
+.agents/
+.sprites/
+.sprite/
+AGENTS.md
+AGENTS.manyfold.md
+
+# Editor and operating-system files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+*.swp
+*.log
