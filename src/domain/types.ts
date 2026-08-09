@@ -39,7 +39,43 @@ export type Intent =
 
 export type Sentiment = 'positive' | 'neutral' | 'concerned' | 'negative'
 export type Severity = 'low' | 'medium' | 'high' | 'urgent'
-export type AgentRunStatus = 'idle' | 'queued' | 'working' | 'done' | 'skipped'
+export type AgentRunStatus = 'idle' | 'queued' | 'working' | 'done' | 'skipped' | 'failed'
+export type SpecialistAgentId = Exclude<AgentId, 'head-butler'>
+export type ModelTask = 'routing' | 'specialist' | 'synthesis'
+export type ModelTier = 'economy' | 'reasoning'
+export type RuntimeMode = 'manyfold-runtime' | 'test-fixture' | 'unavailable'
+
+export type KnowledgeKey =
+  | 'check-in'
+  | 'check-out'
+  | 'access'
+  | 'wifi'
+  | 'luggage'
+  | 'emergency-contact'
+  | 'house-rules'
+  | 'local-bloomsbury'
+  | 'local-greenwich'
+  | 'local-vegetarian'
+
+export type MemoryCategory =
+  | 'preference'
+  | 'visited-place'
+  | 'future-plan'
+  | 'important-request'
+  | 'conversation-fact'
+
+export interface MemoryCandidate {
+  category: MemoryCategory
+  value: string
+}
+
+export interface PropertyKnowledge {
+  accessInstructions: string
+  luggageInstructions: string
+  houseRules: string[]
+  localRecommendations: Record<'bloomsbury' | 'greenwich' | 'vegetarian', string[]>
+  emergencyServices: string
+}
 
 export interface Property {
   id: string
@@ -54,6 +90,7 @@ export interface Property {
   wifiName: string
   wifiPassword: string
   emergencyPhone: string
+  knowledge: PropertyKnowledge
   heroImage: string
 }
 
@@ -127,14 +164,43 @@ export interface AgentActivation {
   status: AgentRunStatus
   task: string
   result?: string
+  selectedBecause?: string
+  model?: string
 }
 
 export interface RouteDecision {
   traceId: string
   intents: Intent[]
   sentiment: Sentiment
+  severity: Severity
   rationale: string
   activations: AgentActivation[]
+  knowledgeKeys?: KnowledgeKey[]
+}
+
+export interface ModelCallTrace {
+  id: string
+  task: ModelTask
+  agentId: AgentId
+  model: string
+  tier: ModelTier
+  reason: string
+  durationMs: number
+  status: 'completed' | 'failed'
+  inputTokens?: number
+  cachedInputTokens?: number
+  outputTokens?: number
+}
+
+export interface OrchestrationTrace {
+  mode: RuntimeMode
+  startedAt: string
+  durationMs: number
+  modelCalls: ModelCallTrace[]
+  groundedKnowledge: KnowledgeKey[]
+  memoryChanges: MemoryCandidate[]
+  safetyRulesApplied: string[]
+  policyRulesApplied: string[]
 }
 
 export interface OrchestrationResult {
@@ -143,14 +209,22 @@ export interface OrchestrationResult {
   finalResponse: string
   memory: GuestMemory
   escalation?: AgentContribution['escalation']
+  trace?: OrchestrationTrace
 }
 
 export interface SpecialistAgent {
-  id: Exclude<AgentId, 'head-butler'>
+  id: SpecialistAgentId
   name: string
   handles: Intent[]
   run: (context: AgentContext, intents: Intent[]) => AgentContribution | null
 }
+
+export type OrchestrationStreamEvent =
+  | { type: 'route'; decision: RouteDecision }
+  | { type: 'agent-start'; agentId: SpecialistAgentId }
+  | { type: 'agent-done'; activation: AgentActivation }
+  | { type: 'final'; result: OrchestrationResult }
+  | { type: 'error'; error: { code: string; message: string; retryable: boolean } }
 
 export interface DemoStep {
   id: string

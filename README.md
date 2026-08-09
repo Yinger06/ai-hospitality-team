@@ -1,194 +1,263 @@
 # AI Hospitality Team
 
-AI Hospitality Team is a working hackathon prototype for post-booking hospitality operations. A Head Butler orchestrates a team of specialist agents from booking confirmation through review follow-up, while the guest receives one coherent host response.
+AI Hospitality Team is a production-oriented prototype for post-booking hospitality operations. A model-backed Head Butler interprets each guest message, activates only useful specialists, grounds their work in guest and property context, and returns one coherent reply.
 
-This is not a booking marketplace. The current scope begins after a booking is confirmed.
+The product is not a booking marketplace. Its scope is:
+
+```text
+Booking confirmed -> Pre-arrival -> Arrival -> During stay
+-> Problem resolution -> Check-out -> Review / follow-up
+```
+
+This branch replaces deterministic keyword routing as the primary intelligence layer. It is a genuine working AI milestone, but it is not yet production-ready: authentication, durable multi-tenant storage, a staff approval queue, and a deployment-grade model adapter remain required.
 
 ## Project identity
 
 - Official product name: **AI Hospitality Team**
 - GitHub repository: **`Yinger06/ai-hospitality-team`**
 - Manifold agent: **`hospitality-builder`**
+- Protected baseline: **`main`**
+- Upgrade branch: **`production-ai-upgrade`**
 
-The legacy session key `stayline-demo-v1` and the Sprite development-service label `stayline` are internal compatibility/environment identifiers only. Any remaining internal `stayline` identifier is not the product name.
+The Sprite service label `stayline` and browser storage key `stayline-demo-v1` are legacy environment/compatibility identifiers only. They are not product names. Do not rename the storage key without a backward-compatible migration.
 
-## What the demo includes
+## Genuine AI path
 
-- A modular Head Butler router and response synthesiser
-- Five independent specialist agents: Guest Memory, Front Desk, Local Guide, Problem Solver, and Guest Experience
-- Multi-intent routing with visible active, working, done, and skipped states
-- Session-persistent guest memory using `sessionStorage`
-- Human escalation for medium, high, and urgent issues
-- Review-request suppression while an issue remains unresolved
-- Five selectable property communication personalities
-- A ten-step sample journey from booking confirmation to public review response
-- Manual guest-message input through the same pipeline as the scripted demo
-- Replaceable messaging and future-agent interfaces
-- Responsive desktop and mobile host consoles
+For a live guest message, the application performs this sequence:
+
+```text
+Guest message + booking scope + current memory
+                    |
+         deterministic input validation
+         and emergency safety backstop
+                    |
+     Head Butler model call (gpt-5.4-mini)
+       semantic intents, sentiment, severity,
+       specialist selection, knowledge keys,
+       and structured memory candidates
+                    |
+       verified property knowledge lookup
+                    |
+       selected specialists only, in parallel
+       (bounded gpt-5.4-mini model calls)
+                    |
+     deterministic policy and memory commit
+                    |
+   one contribution: return it without another call
+   multiple contributions: synthesis model call
+   (gpt-5.4-mini, or gpt-5.6-terra for complex/high-risk work)
+                    |
+       output validation + action-claim guard
+                    |
+       one guest reply + trace + memory update
+```
+
+Guest Memory is deliberately different from the conversational specialists. The Head Butler extracts memory candidates with a model; typed application code validates scope and writes them. A model never mutates guest state directly.
+
+## Agent responsibilities
+
+| Agent | Genuine responsibility |
+| --- | --- |
+| Head Butler | Semantic interpretation, multi-intent routing, urgency, knowledge needs, selective activation, and coordination |
+| Guest Memory | Scoped retrieval and deterministic commit of model-proposed useful context |
+| Front Desk | Contextual answer based on verified access, Wi-Fi, check-in, check-out, luggage, and property facts |
+| Local Guide | Personalised suggestions using only supplied local knowledge and guest memory |
+| Problem Solver | Complaint interpretation, severity, immediate recovery guidance, and escalation recommendation |
+| Guest Experience | Welcome, sentiment-aware care, recovery follow-up, farewell, and review relationship |
+| Response synthesiser | Deduplicates and prioritises several specialist contributions into one guest reply |
+
+The UI streams route and specialist events from the server. It shows selected, working, completed, skipped, and failed states, plus model IDs, call purpose, duration, grounding, memory changes, and safety rules. Private model reasoning is never shown.
+
+## Manyfold usage
+
+The active `ManyfoldCodexRuntime` is a server-side adapter for the existing Manyfold-managed Sprite runtime:
+
+1. It resolves the existing agent's enabled model configuration with `mf model-config get $MF_AGENT_ID`.
+2. It invokes the Manyfold-managed Codex model provider through the installed Codex runtime.
+3. Every call runs in a fresh temporary directory with tools disabled, no inherited shell environment, ignored user/project instructions, read-only sandboxing, and a strict JSON output schema.
+4. The application records model, tier, task, latency, and token usage returned by each call.
+
+No new Manyfold agent, model provider, paid service, or credential was created for this milestone. The verified enabled models used here are `gpt-5.4-mini` and `gpt-5.6-terra`. Availability must be rechecked when moving to another account or runtime.
+
+The public Manyfold Chat API is not the active adapter. It requires a dedicated API token, and API turns for a Codex coding agent have unrestricted workspace permissions. Routing guest-controlled text to `hospitality-builder` that way would be unsafe. A future deployment should use a dedicated, least-privilege hospitality runtime or another secure `ModelRuntime` implementation.
 
 ## Quick start
 
-Requirements: Node.js 20 or newer and npm 10 or newer.
+Requirements:
+
+- Node.js 20 or newer
+- npm 10 or newer
+- For live AI: a Manyfold-managed runtime with `mf`, Codex, `MF_AGENT_ID`, and working managed model access
+
+Install and run inside the existing Manyfold runtime:
 
 ```bash
 npm ci
 npm run dev
 ```
 
-Open the URL printed by Vite, usually `http://localhost:5173`.
+Open the Vite URL, normally `http://localhost:5173`. The existing Sprite service uses port 8080.
 
-Production build:
+Check the server boundary without starting a model call:
+
+```bash
+curl http://localhost:8080/api/health
+```
+
+Expected live mode:
+
+```json
+{"status":"ok","aiRuntime":"manyfold-runtime"}
+```
+
+### Explicit fixture mode
+
+Automated browser tests use a deterministic fixture runtime. It is visibly labelled **Test fixture mode** and must never be represented as live AI:
+
+```bash
+AI_RUNTIME=fixture npm run dev
+```
+
+There is no automatic fallback from live AI to this fixture. Provider failures produce a visible safe handoff.
+
+## Build and server
 
 ```bash
 npm run build
-npm run preview
+npm start
 ```
 
-Tests:
+`npm run build` produces:
+
+- `dist/`: browser assets
+- `server-dist/`: Node orchestration server
+
+`npm start` serves both the UI and `/api/*`. A static-only host is no longer sufficient because model credentials and model execution must remain server-side.
+
+Environment variables:
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `AI_RUNTIME` | `manyfold-codex` | Active runtime. `fixture` is test-only and visibly disclosed. |
+| `AI_ECONOMY_MODEL` | `gpt-5.4-mini` | Routing and bounded specialist work |
+| `AI_REASONING_MODEL` | `gpt-5.6-terra` | Complex or high-risk synthesis only |
+| `AI_PROVIDER_BASE_URL` | resolved from Manyfold | Optional non-secret endpoint override |
+| `PORT` | `8080` | Production server port |
+
+No secret belongs in a `VITE_*` variable or browser bundle. `.env` files are ignored. The active Manyfold adapter uses runtime-managed authentication and never sends credentials to the browser.
+
+## Tests
 
 ```bash
 npm test
+npm run build
 ```
 
-Optional browser smoke test (install Chromium once):
+Browser tests use explicit fixture mode. Start a fixture server on a spare port, then run:
 
 ```bash
-npx playwright install chromium
-npm run test:e2e
+AI_RUNTIME=fixture PORT=4173 npm start
+PLAYWRIGHT_BASE_URL=http://127.0.0.1:4173 npm run test:e2e
 ```
 
-No environment variables are required. The prototype is deterministic and makes no external AI or messaging calls. `.env.example` documents the extension point for future providers.
+The optional live evaluation calls real models and consumes normal Manyfold model quota:
 
-## Deployment
-
-AI Hospitality Team is a client-side Vite application. Any static host that supports a Node.js build step can serve it with these settings:
-
-| Setting | Value |
-| --- | --- |
-| Node.js | 20 or newer |
-| Install command | `npm ci` |
-| Build command | `npm run build` |
-| Publish directory | `dist` |
-| Environment variables | None |
-
-To verify the production output locally, run `npm run build`, then `npm run preview`. The preview command serves the generated `dist` directory and prints the local URL.
-
-For a host that publishes the site under a repository subpath rather than at a domain root, configure Vite's `base` option for that subpath before deployment. That deployment-specific setting is intentionally not enabled in the current prototype.
-
-## Demo flow
-
-Use **Next demo moment** below the conversation to move through the complete sample journey. The most useful judging moment is **Multi-intent moment**:
-
-> We had a wonderful day at the British Museum. The shower seems a little cold though. We’re going to Greenwich tomorrow.
-
-The Head Butler detects four intents and activates Guest Memory, Guest Experience, Local Guide, and Problem Solver. Front Desk is explicitly skipped. The agents save the museum and Greenwich context, escalate the shower issue to the host, acknowledge the positive experience, add relevant Greenwich help, and return one natural response.
-
-The left journey list can jump directly to any scenario. **Reset demo** clears session state. The voice selector in the header changes welcome, farewell, review-request, review-response, and general support wording.
-
-## Architecture
-
-```text
-Booking / guest / host / review event
-                 |
-       MessageAdapter interface
-                 |
-        Head Butler router
-      intent + stage + sentiment
-                 |
-       Agent registry selects only
-       relevant specialist agents
-          /   /   |   \   \
-     Memory Desk Care Guide Problem
-          \   \   |   /   /
-        explicit contributions
-          + memory patches
-          + escalation records
-                 |
-        Response synthesiser
-                 |
-      One message sent to guest
+```bash
+npm run eval:live
 ```
 
-Agent modules never write directly to the conversation. They return typed `AgentContribution` objects. The Head Butler merges memory patches and issue records, then gives all response parts to the synthesiser. This keeps responsibilities testable and prevents separate robotic messages reaching the guest.
+It checks paraphrased multi-intent language, indirect urgent safety language, and irrelevant friendly chat. It reports actual selected agents, model IDs, token usage, memory changes, and safety rules.
+
+## Data and memory
+
+Current memory has two adapters:
+
+- `RequestMemoryRepository` enforces `propertyId + bookingId + guestId` scope during orchestration.
+- Browser `sessionStorage` retains the demo journey for the current tab using the legacy key `stayline-demo-v1`.
+
+This is not durable commercial storage. The repository boundary is designed for a future database implementation with tenant isolation, retention/deletion controls, staff access policy, audit records, and encrypted storage. See [docs/architecture.md](docs/architecture.md).
+
+## Property knowledge
+
+Front Desk and Local Guide receive facts from a typed property knowledge record. The model selects knowledge keys; code retrieves exact values. Missing information must be acknowledged rather than invented.
+
+The bundled Primrose House property, guest, Wi-Fi, access instructions, and local suggestions are demo fixtures. They are not a live knowledge-base integration, and opening hours or availability are not claimed as current.
+
+## Safety and human approval
+
+The application may analyse and recommend, but it does not execute refunds, discounts, compensation, bookings, maintenance dispatch, emergency calls, or messages to staff.
+
+Deterministic policy requires human review for medium, high, and urgent issues. Emergency phrase backstops cover fire/gas, medical danger, and immediate property/security risk even if a model under-routes the message. The guest receives grounded emergency and host contact details. The UI says **Human review required**, not that a person was already notified.
+
+Review requests must be withheld while issues remain unresolved. High-impact actions need a future staff approval workflow and audit record before any external adapter can execute them.
+
+## Failure handling
+
+- Model timeout/provider failure: stop the AI path, show an operational error, and send a conservative human-handoff message.
+- Malformed structured output: reject it; do not use partial free-form data.
+- Missing property fact: state that the host must confirm it.
+- Unauthorised action claim: reject the response rather than pretending an external action happened.
+- Messaging/PMS failure: not connected yet; current adapters are explicitly simulated.
+
+No deterministic keyword engine silently replaces a failed live model call.
 
 ## Project structure
 
 ```text
+server/
+  data/                  Grounded property and scoped memory repositories
+  evals/                 Optional real-model routing evaluation
+  http/                  Streaming API boundary
+  orchestration/         AI Head Butler, prompts, schemas, routing, synthesis
+  policy/                Deterministic safety and business guards
+  runtime/               Replaceable model runtime adapters
 src/
-  agents/                 Specialist implementations and registry
-    frontDesk.ts
-    guestExperience.ts
-    guestMemory.ts
-    localGuide.ts
-    problemSolver.ts
-    registry.ts            Current agents plus future registration slots
-  components/              Host-console UI and live agent visualisation
-  data/sampleData.ts       Property, guest, and complete demo journey
-  domain/types.ts          Agent, lifecycle, memory, event, and result contracts
-  hooks/useGuestJourney.ts UI workflow, animation phases, and session persistence
-  orchestration/
-    router.ts              Intent detection and selective activation
-    headButler.ts          Specialist execution and state coordination
-    synthesizer.ts         One coherent guest response
-    headButler.test.ts     Core journey and policy tests
-  services/
-    messageAdapter.ts      Replaceable inbound/outbound integration boundary
+  agents/                Legacy deterministic specialists (not the live path)
+  components/            Host console and agent visualisation
+  data/                  Labelled demo property/guest journey
+  domain/                Shared typed contracts
+  hooks/                 Guest journey and streamed orchestration state
+  orchestration/         Legacy deterministic engine and regression tests
+  services/              API and simulated messaging adapter boundaries
+docs/
+  architecture.md        Commercial data, isolation, adapter, and safety design
 ```
 
-## What is simulated
+The legacy deterministic engine remains for baseline regression coverage and as a reference fixture. It is not imported by the live message path. `src/hooks/useGuestJourney.ts` calls only the server orchestration API.
 
-- Agent reasoning is deterministic, keyword and lifecycle based. This makes the demo fast, offline, reproducible, and easy to judge.
-- Booking, guest inbox, host updates, and review events come from the local demo journey.
-- Access instructions, Wi-Fi credentials, local recommendations, property data, and human alerts use realistic fixture data.
-- “Human host notified” creates an in-app escalation record; it does not send SMS, email, or a task to an external system.
-- Guest memory persists only for the current browser tab session.
+## Current simulations and limitations
 
-The deterministic agents can later become prompt-backed or tool-using implementations without changing the `SpecialistAgent`, `AgentContribution`, routing, or UI contracts.
+- Booking, guest inbox, host updates, reviews, and outbound delivery use local demo adapters.
+- The initial welcome visible on first load is labelled `Sample welcome · fixture`; running the booking demo event uses the live path.
+- Primrose House, Maya, access details, and local knowledge are fixtures.
+- Browser memory is temporary; no commercial database is connected.
+- Escalations are in-app records only; no staff notification is sent.
+- There is no user authentication, role-based access control, tenant administration, webhook verification, durable audit store, or production monitoring yet.
+- Model call traces are returned to this trusted host console; a guest channel adapter should receive only the final response.
 
-## Extension path
+## Deployment status
 
-### Real AI models
+Nothing in this repository deploys automatically. Do not publish the current server without adding host/staff authentication, rate limiting, tenant isolation, secure runtime credentials, durable storage, logs/metrics, and an approval queue.
 
-Replace individual `run` functions or add an `AgentRuntime` adapter. Keep validated structured outputs matching `AgentContribution`; do not let free-form model output mutate memory directly. Add provider configuration to `.env.example`, and keep credentials server-side.
+The code is portable at the orchestration boundary: replace `ModelRuntime`, `GuestMemoryRepository`, property knowledge, and message adapters without changing agent contracts. The current `ManyfoldCodexRuntime` is appropriate for the Manyfold development/demo environment, not yet a general public hosting adapter.
 
-### PMS and messaging
+## Future integrations
 
-Implement `MessageAdapter` for a PMS, OTA inbox, email, or WhatsApp provider. In production this should sit behind a server endpoint with webhook verification, retries, idempotency keys, and an outbound audit log.
+Planned replaceable adapters include PMS/OTA booking events, Booking.com, Airbnb, WhatsApp, email, web chat, maps, voice, payments/refunds, and staff task systems. None is represented as live today.
 
-### Durable storage
+The reserved `pre-booking` lifecycle and `enquiry-pricing` slot remain unimplemented. A future pricing agent must use deterministic discount authority and human approval above policy limits.
 
-Move guest profile, memory, conversation, issue, and trace records to a database. Scope all reads and writes by property and booking, and add retention and deletion controls.
+## GitHub export
 
-### Future pre-booking support
+Repository: `https://github.com/Yinger06/ai-hospitality-team`
 
-`FutureStayStage`, `FutureAgentId`, and `futureAgentSlots` reserve a `pre-booking` / `enquiry-pricing` extension without placing it in the current runtime. A future module can register against the same agent contract, then add discount authority and human-approval policies. No current booking-confirmed-to-review module needs restructuring.
-
-## Recommended next production work
-
-1. Add a server-side model runtime with structured output validation and trace storage.
-2. Add host authentication, property isolation, and role-based escalation controls.
-3. Add a durable database and audited human handoff queue.
-4. Connect one real PMS or messaging adapter behind verified webhooks.
-5. Add model evaluations for routing, memory precision, safety escalation, tone, and review timing.
-6. Add multilingual guest communication and host-approved local knowledge.
-
-## Export to GitHub
-
-The repository is portable and contains no platform-specific runtime dependency. Manyfold and Sprite workspace metadata, local environment files, dependencies, builds, and test output are excluded by `.gitignore`.
-
-For the existing `Yinger06/ai-hospitality-team` repository, authenticate with GitHub's browser flow and push over HTTPS:
+Normal future branch publication:
 
 ```bash
-gh auth login --hostname github.com --git-protocol https --web
-git init
-git add .
-git commit -m "Build AI Hospitality Team multi-agent guest operations prototype"
-git branch -M main
-git remote add origin https://github.com/Yinger06/ai-hospitality-team.git
-git push -u origin main
+git push -u origin production-ai-upgrade
 ```
 
-The GitHub login uses OAuth and does not require creating or pasting a personal access token. These commands only save the source to GitHub; they do not deploy the application. Never commit `.env` files or provider credentials.
+This saves source code only; it does not deploy the application. Never commit `.env` files, provider tokens, OAuth files, runtime credentials, build output, or local workspace metadata.
 
 ## Asset attribution
 

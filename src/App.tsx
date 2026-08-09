@@ -46,6 +46,7 @@ export default function App() {
           result={guestJourney.result}
           memory={guestJourney.memory}
           isProcessing={guestJourney.isProcessing}
+          error={guestJourney.orchestrationError}
         />
       </div>
     </div>

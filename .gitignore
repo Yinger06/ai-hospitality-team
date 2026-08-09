@@ -1,9 +1,13 @@
 node_modules/
 dist/
+server-dist/
 
 # Local environment and credentials
 .env*
 !.env.example
+.config/
+.gitconfig
+.manyfold/
 
 # Test and build output
 coverage/

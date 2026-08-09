@@ -13,6 +13,28 @@ export const sampleProperty: Property = {
   wifiName: 'Primrose_Guest',
   wifiPassword: 'teacup2026',
   emergencyPhone: '+44 20 7946 0182',
+  knowledge: {
+    accessInstructions: 'Use the lower brass keypad at the blue door and enter 2841#, then take the garden path on the left.',
+    luggageInstructions: 'Guests may leave luggage with the host from 1:00 PM on arrival day.',
+    houseRules: [
+      'Quiet hours are from 10:00 PM to 7:00 AM.',
+      'The property is smoke-free.',
+    ],
+    localRecommendations: {
+      bloomsbury: [
+        'The British Museum is a 10-minute walk from Primrose House.',
+        'Russell Square station is the closest Underground station.',
+      ],
+      greenwich: [
+        'The Thames Clipper from Embankment is a scenic route to Greenwich.',
+        'Greenwich Market is close to the Cutty Sark and the riverside.',
+      ],
+      vegetarian: [
+        'Greenwich Market has several vegetarian lunch stalls, but opening hours should be checked before travel.',
+      ],
+    },
+    emergencyServices: '999',
+  },
   heroImage: '/assets/primrose-house.jpg',
 }
 

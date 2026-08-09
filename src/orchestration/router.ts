@@ -90,6 +90,7 @@ export const routeMessage = (context: AgentContext): RouteDecision => {
     traceId: `trace-${Date.now()}`,
     intents,
     sentiment: detectSentiment(context.message),
+    severity: intents.includes('problem') ? 'medium' : 'low',
     rationale: `${intents.length} intent${intents.length === 1 ? '' : 's'} found; activating ${activeNames.length} relevant specialist${activeNames.length === 1 ? '' : 's'}.`,
     activations,
   }

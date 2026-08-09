@@ -98,7 +98,7 @@ export const Sidebar = ({ demoIndex, stage, isOpen, onClose, onReset, onRunStep 
     <div className="sidebar-footer">
       <button type="button"><CircleUserRound size={17} /><span>Team</span></button>
       <button type="button"><Settings size={17} /><span>Settings</span></button>
-      <span className="environment-pill"><i /> Demo data</span>
+      <span className="environment-pill"><i /> Demo property data</span>
       <span className="sr-only">Current stage: {stage}</span>
     </div>
   </aside>

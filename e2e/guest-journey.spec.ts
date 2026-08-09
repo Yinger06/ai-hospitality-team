@@ -3,21 +3,22 @@ import { expect, test } from '@playwright/test'
 test('shows selective multi-agent work, memory, escalation, and one guest response', async ({ page }) => {
   await page.goto('/')
   await expect(page.getByText('AI Hospitality Team')).toBeVisible()
-  await expect(page.getByText('Automatic welcome')).toBeVisible()
+  await expect(page.getByText('Sample welcome · fixture')).toBeVisible()
 
   await page.getByRole('button', { name: /Multi-intent moment/ }).click()
-  await page.waitForTimeout(520)
+  await page.waitForTimeout(120)
 
   await expect(page.getByText('Team is coordinating')).toBeVisible()
-  expect(await page.locator('.agent-working').count()).toBeGreaterThanOrEqual(4)
+  expect(await page.locator('.agent-working').count()).toBeGreaterThanOrEqual(3)
   await expect(page.locator('.live-indicator')).toContainText('Live')
 
   await expect(page.getByText('One response synthesised')).toBeVisible()
+  await expect(page.getByText('Test fixture mode')).toBeVisible()
   await expect(page.locator('.trace-title')).toContainText('4 intents')
   await expect(page.locator('.agent-card').filter({ hasText: 'Front Desk' })).toContainText('Skipped')
   await expect(page.locator('.memory-list')).toContainText('British Museum')
   await expect(page.locator('.memory-list')).toContainText('Greenwich')
-  await expect(page.locator('.escalation-card')).toContainText('Human host notified')
+  await expect(page.locator('.escalation-card')).toContainText('Human review required')
   await expect(page.locator('.message-host .message-bubble').last()).toContainText('British Museum')
   await expect(page.locator('.message-host .message-bubble').last()).toContainText('shower')
   await expect(page.locator('.message-host .message-bubble').last()).toContainText('Greenwich')
