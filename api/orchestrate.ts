@@ -1,5 +1,4 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { Readable } from 'node:stream'
 
 const writeJson = (response: ServerResponse, status: number, value: unknown) => {
   response.writeHead(status, {
@@ -7,6 +6,15 @@ const writeJson = (response: ServerResponse, status: number, value: unknown) => 
     'Cache-Control': 'no-store',
   })
   response.end(JSON.stringify(value))
+}
+
+const writeNdjson = (response: ServerResponse, status: number, value: unknown) => {
+  response.writeHead(status, {
+    'Content-Type': 'application/x-ndjson; charset=utf-8',
+    'Cache-Control': 'no-store, no-transform',
+    'X-Content-Type-Options': 'nosniff',
+  })
+  response.end(`${JSON.stringify(value)}\n`)
 }
 
 const readBody = async (request: IncomingMessage) => {
@@ -23,16 +31,23 @@ const getRequiredEnv = (name: string) => {
   return value
 }
 
-const isHopByHopHeader = (name: string) =>
-  name === 'connection' ||
-  name === 'content-length' ||
-  name === 'keep-alive' ||
-  name === 'proxy-authenticate' ||
-  name === 'proxy-authorization' ||
-  name === 'te' ||
-  name === 'trailers' ||
-  name === 'transfer-encoding' ||
-  name === 'upgrade'
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+
+const normaliseRpcError = (error: unknown, fallbackCode: string, retryable: boolean) => {
+  const detail = isRecord(error) ? error : {}
+  return {
+    code: typeof detail.code === 'string'
+      ? detail.code
+      : typeof detail.code === 'number'
+        ? String(detail.code)
+        : fallbackCode,
+    message: typeof detail.message === 'string'
+      ? detail.message
+      : 'The orchestration service returned an error.',
+    retryable,
+  }
+}
 
 export default async function handler(request: IncomingMessage, response: ServerResponse) {
   if (request.method !== 'POST') {
@@ -76,16 +91,37 @@ export default async function handler(request: IncomingMessage, response: Server
     return
   }
 
-  const headers: Record<string, string> = {}
-  upstream.headers.forEach((value, name) => {
-    if (!isHopByHopHeader(name)) headers[name] = value
-  })
-  response.writeHead(upstream.status, headers)
+  const payloadText = await upstream.text().catch(() => '')
+  let payload: unknown
+  try {
+    payload = payloadText ? JSON.parse(payloadText) : null
+  } catch {
+    payload = null
+  }
 
-  if (!upstream.body) {
-    response.end()
+  if (upstream.ok) {
+    if (isRecord(payload) && 'result' in payload) {
+      writeNdjson(response, 200, { type: 'final', result: payload.result })
+      return
+    }
+
+    const error = isRecord(payload) && 'error' in payload
+      ? normaliseRpcError(payload.error, 'orchestration_failed', true)
+      : {
+          code: 'malformed_response',
+          message: 'The orchestration service returned an unexpected response.',
+          retryable: true,
+        }
+    writeNdjson(response, 200, { type: 'error', error })
     return
   }
 
-  Readable.fromWeb(upstream.body as unknown as import('node:stream/web').ReadableStream).pipe(response)
+  const error = isRecord(payload) && 'error' in payload
+    ? normaliseRpcError(payload.error, 'upstream_error', upstream.status >= 500)
+    : {
+        code: 'upstream_error',
+        message: `The orchestration service failed with status ${upstream.status}.`,
+        retryable: upstream.status >= 500,
+      }
+  writeJson(response, upstream.status, { error })
 }
