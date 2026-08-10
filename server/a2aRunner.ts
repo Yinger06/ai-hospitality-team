@@ -4,6 +4,7 @@ import { orchestrateWithAi } from './orchestration/headButlerAi.js'
 import { getModelRuntime } from './runtime/runtimeFactory.js'
 
 const MAX_INPUT_BYTES = 100_000
+const DEFAULT_MANYFOLD_PROVIDER_BASE_URL = 'https://3avtktubfdf842bfx2fk.netmind.xyz'
 const eventTypes: AgentContext['eventType'][] = [
   'guest-message', 'booking-event', 'host-action', 'review-event',
 ]
@@ -45,6 +46,7 @@ const validateContext = (value: unknown): AgentContext => {
 const main = async () => {
   const input = await readStdin()
   const context = validateContext(JSON.parse(input) as unknown)
+  process.env.AI_PROVIDER_BASE_URL ??= DEFAULT_MANYFOLD_PROVIDER_BASE_URL
   const result = await orchestrateWithAi(context, { runtime: getModelRuntime() })
   process.stdout.write(JSON.stringify(result))
 }
