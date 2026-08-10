@@ -87,6 +87,7 @@ export default async function handler(request: IncomingMessage, response: Server
     id: randomUUID(),
     method: 'message/send',
     params: {
+      id: randomUUID(),
       message: {
         messageId: randomUUID(),
         role: 'user',
@@ -96,9 +97,6 @@ export default async function handler(request: IncomingMessage, response: Server
             text: typeof context.message === 'string' ? context.message : '',
           },
         ],
-      },
-      metadata: {
-        context,
       },
     },
   }
