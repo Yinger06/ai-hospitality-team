@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
+export const maxDuration = 300
+
 const writeJson = (response: ServerResponse, status: number, value: unknown) => {
   response.writeHead(status, {
     'Content-Type': 'application/json; charset=utf-8',
@@ -34,6 +36,47 @@ const getRequiredEnv = (name: string) => {
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
+
+const textFromParts = (parts: unknown) => {
+  if (!Array.isArray(parts)) return ''
+  return parts
+    .filter((part): part is Record<string, unknown> => isRecord(part) && part.kind === 'text')
+    .map((part) => typeof part.text === 'string' ? part.text : '')
+    .join('')
+}
+
+const textFromA2aResult = (result: unknown) => {
+  if (!isRecord(result)) return ''
+  if (result.kind === 'message') return textFromParts(result.parts)
+  if (result.kind !== 'task') return ''
+
+  if (Array.isArray(result.artifacts)) {
+    for (const artifact of [...result.artifacts].reverse()) {
+      if (!isRecord(artifact)) continue
+      const text = textFromParts(artifact.parts)
+      if (text) return text
+    }
+  }
+
+  if (isRecord(result.status) && isRecord(result.status.message)) {
+    return textFromParts(result.status.message.parts)
+  }
+  return ''
+}
+
+const parseAgentJson = (value: string) => {
+  const trimmed = value.trim()
+  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i)
+  return JSON.parse(fenced?.[1] ?? trimmed) as unknown
+}
+
+const isOrchestrationResult = (value: unknown) =>
+  isRecord(value) &&
+  isRecord(value.decision) &&
+  Array.isArray(value.decision.activations) &&
+  Array.isArray(value.contributions) &&
+  typeof value.finalResponse === 'string' &&
+  isRecord(value.memory)
 
 const normaliseRpcError = (error: unknown, fallbackCode: string, retryable: boolean) => {
   const detail = isRecord(error) ? error : {}
@@ -82,21 +125,26 @@ export default async function handler(request: IncomingMessage, response: Server
   }
 
   const context = requestBody.context
+  const a2aPrompt = `AI_HOSPITALITY_CONTEXT_V1\n${JSON.stringify(context)}`
   const rpcRequest = {
     jsonrpc: '2.0',
     id: randomUUID(),
     method: 'message/send',
     params: {
-      id: randomUUID(),
       message: {
+        kind: 'message',
         messageId: randomUUID(),
         role: 'user',
         parts: [
           {
             kind: 'text',
-            text: typeof context.message === 'string' ? context.message : '',
+            text: a2aPrompt,
           },
         ],
+      },
+      configuration: {
+        blocking: true,
+        acceptedOutputModes: ['text/plain'],
       },
     },
   }
@@ -133,7 +181,29 @@ export default async function handler(request: IncomingMessage, response: Server
 
   if (upstream.ok) {
     if (isRecord(payload) && 'result' in payload) {
-      writeNdjson(response, 200, { type: 'final', result: payload.result })
+      let result: unknown = payload.result
+      if (!isOrchestrationResult(result)) {
+        const resultText = textFromA2aResult(result)
+        try {
+          result = resultText ? parseAgentJson(resultText) : null
+        } catch {
+          result = null
+        }
+      }
+
+      if (!isOrchestrationResult(result)) {
+        writeNdjson(response, 200, {
+          type: 'error',
+          error: {
+            code: 'malformed_a2a_result',
+            message: 'The orchestration agent returned an unexpected response.',
+            retryable: true,
+          },
+        })
+        return
+      }
+
+      writeNdjson(response, 200, { type: 'final', result })
       return
     }
 
