@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
 const writeJson = (response: ServerResponse, status: number, value: unknown) => {
@@ -55,9 +56,9 @@ export default async function handler(request: IncomingMessage, response: Server
     return
   }
 
-  let body: Buffer
+  let requestBody: unknown
   try {
-    body = await readBody(request)
+    requestBody = JSON.parse((await readBody(request)).toString('utf8')) as unknown
   } catch {
     writeJson(response, 400, {
       error: {
@@ -69,6 +70,39 @@ export default async function handler(request: IncomingMessage, response: Server
     return
   }
 
+  if (!isRecord(requestBody) || !isRecord(requestBody.context)) {
+    writeJson(response, 400, {
+      error: {
+        code: 'invalid_request',
+        message: 'A valid context payload is required.',
+        retryable: false,
+      },
+    })
+    return
+  }
+
+  const context = requestBody.context
+  const rpcRequest = {
+    jsonrpc: '2.0',
+    id: randomUUID(),
+    method: 'message/send',
+    params: {
+      message: {
+        messageId: randomUUID(),
+        role: 'user',
+        parts: [
+          {
+            kind: 'text',
+            text: typeof context.message === 'string' ? context.message : '',
+          },
+        ],
+      },
+      metadata: {
+        context,
+      },
+    },
+  }
+
   let upstream: Response
   try {
     upstream = await fetch(getRequiredEnv('MANYFOLD_A2A_RPC_URL'), {
@@ -78,7 +112,7 @@ export default async function handler(request: IncomingMessage, response: Server
         Accept: 'application/x-ndjson, application/json',
         Authorization: `Bearer ${getRequiredEnv('MF_A2A_BEARER')}`,
       },
-      body,
+      body: JSON.stringify(rpcRequest),
     })
   } catch {
     writeJson(response, 502, {
