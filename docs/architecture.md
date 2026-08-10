@@ -6,7 +6,8 @@ AI Hospitality Team currently proves one genuine model-backed guest-message path
 
 ```text
 Inbound channel adapter
-  -> authenticated application service
+  -> application service / Vercel A2A bridge
+  -> isolated Manyfold A2A orchestrator
   -> booking/property/guest context repositories
   -> Head Butler orchestration
   -> model runtime adapter
@@ -18,7 +19,7 @@ Inbound channel adapter
 
 Replaceable interfaces are the design constraint:
 
-- `ModelRuntime`: Manyfold/Codex today; a least-privilege hosted agent or another provider later.
+- `ModelRuntime`: Manyfold-managed Codex behind an isolated A2A agent today; the provider adapter remains replaceable.
 - `GuestMemoryRepository`: request-scoped transitional implementation today; durable tenant-scoped database later.
 - Property knowledge repository: typed fixture today; versioned property documents/search later.
 - Message adapter: local in-memory delivery today; PMS, OTA, email, or messaging channel later.
@@ -111,6 +112,8 @@ Do not store raw hidden reasoning. Message content and model inputs need retenti
 - Concurrent messages: serialize or version memory updates per conversation/booking.
 
 ## Deployment prerequisites
+
+The competition Preview has bounded request validation plus best-effort per-instance request, daily, and concurrency guards. The public A2A path is blocking and returns one final/error NDJSON event; only the direct local Node path streams intermediate agent events. A production service still needs distributed enforcement and the controls below.
 
 Before public deployment:
 

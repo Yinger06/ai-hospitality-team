@@ -16,6 +16,8 @@ test-results/
 blob-report/
 .cache/
 .npm/
+.local/
+chat-attachments/
 *.tsbuildinfo
 vite.config.js
 vite.config.d.ts

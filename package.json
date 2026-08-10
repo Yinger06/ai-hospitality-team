@@ -11,7 +11,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "eval:live": "node server-dist/server/evals/liveRouting.js"
+    "eval:live": "node server-dist/server/evals/liveRouting.js",
+    "manyfold:sync": "node manyfold/orchestrator/sync-workspace.mjs",
+    "manyfold:check": "node manyfold/orchestrator/sync-workspace.mjs --check"
   },
   "dependencies": {
     "lucide-react": "^1.31.0",

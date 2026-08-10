@@ -9,7 +9,7 @@ Booking confirmed -> Pre-arrival -> Arrival -> During stay
 -> Problem resolution -> Check-out -> Review / follow-up
 ```
 
-This branch replaces deterministic keyword routing as the primary intelligence layer. It is a genuine working AI milestone, but it is not yet production-ready: authentication, durable multi-tenant storage, a staff approval queue, and a deployment-grade model adapter remain required.
+This branch replaces deterministic keyword routing as the primary intelligence layer. It is a production-oriented competition prototype, not a production-ready service: authentication, durable multi-tenant storage, a staff approval queue, distributed abuse controls, and operational monitoring remain required.
 
 ## Project identity
 
@@ -66,20 +66,26 @@ Guest Memory is deliberately different from the conversational specialists. The 
 | Guest Experience | Welcome, sentiment-aware care, recovery follow-up, farewell, and review relationship |
 | Response synthesiser | Deduplicates and prioritises several specialist contributions into one guest reply |
 
-The UI streams route and specialist events from the server. It shows selected, working, completed, skipped, and failed states, plus model IDs, call purpose, duration, grounding, memory changes, and safety rules. Private model reasoning is never shown.
+The local Node server streams route and specialist events while it runs orchestration directly. The public Vercel path is deliberately blocking: Manyfold A2A returns a final `Message` or completed `Task`, and the Vercel bridge returns exactly one final or error NDJSON event. The UI then renders the final selected/skipped/completed agent state, model IDs, call purpose, duration, grounding, memory changes, and safety rules. It does not currently animate live specialist progress over the public A2A path. Private model reasoning is never shown.
 
 ## Manyfold usage
 
-The active `ManyfoldCodexRuntime` is a server-side adapter for the existing Manyfold-managed Sprite runtime:
+The public competition path is:
 
-1. It resolves the existing agent's enabled model configuration with `mf model-config get $MF_AGENT_ID`.
-2. It invokes the Manyfold-managed Codex model provider through the installed Codex runtime.
-3. Every call runs in a fresh temporary directory with tools disabled, no inherited shell environment, ignored user/project instructions, read-only sandboxing, and a strict JSON output schema.
-4. The application records model, tier, task, latency, and token usage returned by each call.
+```text
+Browser -> Vercel /api/orchestrate -> Manyfold A2A
+-> AI Hospitality Team Orchestrator -> versioned orchestration runner
+-> Head Butler + selected specialists -> structured result
+-> A2A Message/completed Task -> one NDJSON final event -> browser
+```
 
-No new Manyfold agent, model provider, paid service, or credential was created for this milestone. The verified enabled models used here are `gpt-5.4-mini` and `gpt-5.6-terra`. Availability must be rechecked when moving to another account or runtime.
+The dedicated Manyfold target is **AI Hospitality Team Orchestrator** (`agt_agp6y5mgxr5qzf33egqz6sqcc4`) in `/home/sprite/.manyfold/workspaces/ai-hospitality-team-orchestrator`. It is separate from the development agent `hospitality-builder`. A2A exposure and a revocable external caller authorize Vercel; the bearer stays only in Vercel's encrypted server environment.
 
-The public Manyfold Chat API is not the active adapter. It requires a dedicated API token, and API turns for a Codex coding agent have unrestricted workspace permissions. Routing guest-controlled text to `hospitality-builder` that way would be unsafe. A future deployment should use a dedicated, least-privilege hospitality runtime or another secure `ModelRuntime` implementation.
+Hosted Manyfold A2A currently starts a Codex framework turn rather than a direct executable hook. The least-privilege mechanism available in this environment is therefore a dedicated isolated agent whose `AGENTS.md` permits only the versioned `ai-hospitality-orchestrator` skill. That skill passes the single marked JSON context to `server-dist/server/a2aRunner.js`; it forbids general chat, debugging, browsing, file changes, environment inspection, and alternate answers. The application runner, not the outer framework turn, performs Head Butler routing and specialist orchestration.
+
+`ManyfoldCodexRuntime` invokes the Manyfold-managed provider through the installed Codex runtime. Each model call runs in a fresh temporary directory with application tools disabled, no inherited shell variables inside the model sandbox, ignored user/project instructions, read-only sandboxing, and a strict JSON output schema. The application records model, tier, task, latency, and token usage returned by each call.
+
+The target uses Manyfold's `platform` model source. `npm run manyfold:sync` reads the official non-secret `mf model-config get` view, verifies `gpt-5.4-mini` and `gpt-5.6-terra`, and writes a mode-`0600` `manyfold-runtime.json` snapshot into the isolated workspace. This avoids both an unverified source-code URL and a runtime account-read permission on the deliberately narrow A2A identity. Provider credentials remain Manyfold-managed and are never copied.
 
 ## Quick start
 
@@ -87,7 +93,7 @@ Requirements:
 
 - Node.js 20 or newer
 - npm 10 or newer
-- For live AI: a Manyfold-managed runtime with `mf`, Codex, `MF_AGENT_ID`, and working managed model access
+- For direct local live AI: a Manyfold-managed runtime with `mf`, Codex, `MF_AGENT_ID`, and working managed model access
 
 Install and run inside the existing Manyfold runtime:
 
@@ -141,10 +147,33 @@ Environment variables:
 | `AI_RUNTIME` | `manyfold-codex` | Active runtime. `fixture` is test-only and visibly disclosed. |
 | `AI_ECONOMY_MODEL` | `gpt-5.4-mini` | Routing and bounded specialist work |
 | `AI_REASONING_MODEL` | `gpt-5.6-terra` | Complex or high-risk synthesis only |
-| `AI_PROVIDER_BASE_URL` | resolved from Manyfold | Optional non-secret endpoint override |
+| `AI_MODEL_CONFIG_FILE` | `./manyfold-runtime.json` if present | Generated managed-model snapshot used by the isolated runner |
+| `AI_PROVIDER_BASE_URL` | unset | Development-only non-secret endpoint override |
+| `MANYFOLD_A2A_RPC_URL` | required on Vercel | Non-secret RPC URL for the isolated orchestrator |
+| `MF_A2A_BEARER` | required on Vercel | Secret revocable external-caller bearer; server-side only |
+| `DEMO_RATE_LIMIT` | `12` | Requests per source per demo window, per warm Vercel instance |
+| `DEMO_RATE_WINDOW_SECONDS` | `900` | Demo rate-window duration |
+| `DEMO_DAILY_REQUEST_LIMIT` | `40` | Daily requests per source, per warm Vercel instance |
+| `DEMO_MAX_CONCURRENT_REQUESTS` | `2` | Concurrent paid A2A requests per warm Vercel instance |
 | `PORT` | `8080` | Production server port |
 
-No secret belongs in a `VITE_*` variable or browser bundle. `.env` files are ignored. The active Manyfold adapter uses runtime-managed authentication and never sends credentials to the browser.
+No secret belongs in a `VITE_*` variable or browser bundle. `.env` files are ignored. The A2A bearer must be configured for Vercel Preview/Production as needed and a new deployment created after changing scope. The active Manyfold adapter uses runtime-managed model authentication and never sends credentials to the browser.
+
+### Reproducible isolated orchestrator
+
+Synchronizing is a zero-model-credit deployment operation. The command copies the repository-pinned package/lockfile, server and domain source, installs the dedicated skill and `AGENTS.md`, snapshots the non-secret managed model view, runs `npm ci`, compiles with the repository's TypeScript `6.0.3`, and records per-file SHA-256 hashes:
+
+```bash
+MANYFOLD_ORCHESTRATOR_AGENT_ID=agt_agp6y5mgxr5qzf33egqz6sqcc4 \
+MANYFOLD_ORCHESTRATOR_WORKSPACE=/home/sprite/.manyfold/workspaces/ai-hospitality-team-orchestrator \
+npm run manyfold:sync
+
+MANYFOLD_ORCHESTRATOR_AGENT_ID=agt_agp6y5mgxr5qzf33egqz6sqcc4 \
+MANYFOLD_ORCHESTRATOR_WORKSPACE=/home/sprite/.manyfold/workspaces/ai-hospitality-team-orchestrator \
+npm run manyfold:check
+```
+
+The sync identity needs `model-config:read` for the target. It does not need model-config edit access and does not invoke a model. A2A exposure and external caller creation are separate zero-credit platform operations. Create a caller only when a new bearer is required; its secret is shown once and must go directly into Vercel's `MF_A2A_BEARER` value.
 
 ## Tests
 
@@ -204,6 +233,11 @@ No deterministic keyword engine silently replaces a failed live model call.
 ## Project structure
 
 ```text
+api/
+  orchestrate.ts         Vercel validation, demo guards, A2A bridge and envelope translation
+manyfold/orchestrator/
+  sync-workspace.mjs     Reproducible isolated workspace generator/checker
+  skill/                 Dedicated A2A runner skill installed into the target
 server/
   data/                  Grounded property and scoped memory repositories
   evals/                 Optional real-model routing evaluation
@@ -216,7 +250,7 @@ src/
   components/            Host console and agent visualisation
   data/                  Labelled demo property/guest journey
   domain/                Shared typed contracts
-  hooks/                 Guest journey and streamed orchestration state
+  hooks/                 Guest journey and orchestration state
   orchestration/         Legacy deterministic engine and regression tests
   services/              API and simulated messaging adapter boundaries
 docs/
@@ -233,11 +267,14 @@ The legacy deterministic engine remains for baseline regression coverage and as 
 - Browser memory is temporary; no commercial database is connected.
 - Escalations are in-app records only; no staff notification is sent.
 - There is no user authentication, role-based access control, tenant administration, webhook verification, durable audit store, or production monitoring yet.
+- Vercel's demo rate/concurrency counters are best-effort and per warm function instance. They reduce accidental competition-credit use but are not a distributed production billing control.
 - Model call traces are returned to this trusted host console; a guest channel adapter should receive only the final response.
 
 ## Deployment status
 
-Nothing in this repository deploys automatically. Do not publish the current server without adding host/staff authentication, rate limiting, tenant isolation, secure runtime credentials, durable storage, logs/metrics, and an approval queue.
+The `production-ai-upgrade` branch is connected to Vercel Preview deployment. A push may therefore create a Preview automatically; no command in this repository manually deploys. The Preview runs only the Vite UI and `api/orchestrate.ts`; the actual model-backed orchestration remains in the isolated Manyfold A2A target.
+
+The public bridge enforces a 64 KiB request limit, bounded context validation, an HTTPS `api.manyfold.ai` target, and per-instance demo request/concurrency budgets. These controls are appropriate for a limited competition demonstration, not a substitute for host/staff authentication, tenant isolation, a distributed rate/cost store, durable audit, monitoring, or an approval queue.
 
 The code is portable at the orchestration boundary: replace `ModelRuntime`, `GuestMemoryRepository`, property knowledge, and message adapters without changing agent contracts. The current `ManyfoldCodexRuntime` is appropriate for the Manyfold development/demo environment, not yet a general public hosting adapter.
 
@@ -257,7 +294,7 @@ Normal future branch publication:
 git push -u origin production-ai-upgrade
 ```
 
-This saves source code only; it does not deploy the application. Never commit `.env` files, provider tokens, OAuth files, runtime credentials, build output, or local workspace metadata.
+This saves source code and may trigger the repository's configured Vercel Preview build; it does not merge `main` or create a production deployment. Never commit `.env` files, provider tokens, OAuth files, runtime credentials, build output, or local workspace metadata.
 
 ## Asset attribution
 

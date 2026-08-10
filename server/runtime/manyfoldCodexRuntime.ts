@@ -1,7 +1,7 @@
 import { execFile, spawn } from 'node:child_process'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import type { ModelRequest, ModelResponse, ModelRuntime, ModelUsage } from './modelRuntime.js'
 import { ModelRuntimeError } from './modelRuntime.js'
@@ -10,8 +10,10 @@ const execFileAsync = promisify(execFile)
 const MAX_OUTPUT_BYTES = 2_000_000
 
 interface ManyfoldModelConfig {
+  source?: string
   providerBaseUrl?: string
   options?: Array<{ value?: string; enabled?: boolean }>
+  validation?: { valid?: boolean; messages?: string[] }
 }
 
 interface JsonLineEvent {
@@ -30,9 +32,39 @@ const safeProviderUrl = (value: string) => {
   return url.toString().replace(/\/$/, '')
 }
 
+const validateManyfoldConfig = (value: ManyfoldModelConfig) => {
+  if (!value.providerBaseUrl) {
+    throw new ModelRuntimeError('unavailable', 'Manyfold did not provide a model endpoint.')
+  }
+  if (value.validation?.valid === false) {
+    throw new ModelRuntimeError('unavailable', 'The Manyfold model configuration is invalid.')
+  }
+  value.providerBaseUrl = safeProviderUrl(value.providerBaseUrl)
+  return value
+}
+
+const readManagedConfigSnapshot = async () => {
+  const configuredPath = process.env.AI_MODEL_CONFIG_FILE
+  const path = resolve(configuredPath ?? join(process.cwd(), 'manyfold-runtime.json'))
+  try {
+    const value = JSON.parse(await readFile(path, 'utf8')) as ManyfoldModelConfig
+    return validateManyfoldConfig(value)
+  } catch (error) {
+    const missingDefault = !configuredPath && isNodeError(error) && error.code === 'ENOENT'
+    if (missingDefault) return undefined
+    if (error instanceof ModelRuntimeError) throw error
+    throw new ModelRuntimeError('unavailable', 'The generated Manyfold model configuration is unreadable.')
+  }
+}
+
+const isNodeError = (error: unknown): error is NodeJS.ErrnoException => error instanceof Error && 'code' in error
+
 const resolveManyfoldConfig = async (): Promise<ManyfoldModelConfig> => {
   const configuredUrl = process.env.AI_PROVIDER_BASE_URL
-  if (configuredUrl) return { providerBaseUrl: safeProviderUrl(configuredUrl) }
+  if (configuredUrl) return validateManyfoldConfig({ providerBaseUrl: configuredUrl })
+
+  const managedSnapshot = await readManagedConfigSnapshot()
+  if (managedSnapshot) return managedSnapshot
 
   const agentId = process.env.MF_AGENT_ID
   if (!agentId) throw new ModelRuntimeError('unavailable', 'MF_AGENT_ID is not available in this runtime.')
@@ -42,7 +74,7 @@ const resolveManyfoldConfig = async (): Promise<ManyfoldModelConfig> => {
       maxBuffer: 512_000,
       timeout: 10_000,
     })
-    return JSON.parse(stdout) as ManyfoldModelConfig
+    return validateManyfoldConfig(JSON.parse(stdout) as ManyfoldModelConfig)
   } catch {
     throw new ModelRuntimeError('unavailable', 'Manyfold model configuration could not be resolved.')
   }
