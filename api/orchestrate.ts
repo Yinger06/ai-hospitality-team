@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import type { AgentContext, OrchestrationResult, OrchestrationStreamEvent } from '../src/domain/types.js'
+import type { AgentContext, Intent, OrchestrationResult, OrchestrationStreamEvent } from '../src/domain/types.js'
 import { stayStages } from '../src/domain/types.js'
 
 export const maxDuration = 300
@@ -140,7 +140,119 @@ const textFromCompletedTask = (result: Record<string, unknown>) => {
 const parseAgentJson = (value: string) => {
   const trimmed = value.trim()
   const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i)
-  return JSON.parse(fenced?.[1] ?? trimmed) as unknown
+  const candidate = (fenced?.[1] ?? trimmed).trim()
+  if (!candidate.startsWith('{') && !candidate.startsWith('[')) return null
+  try {
+    return JSON.parse(candidate) as unknown
+  } catch {
+    return null
+  }
+}
+
+const buildPlainTextResult = (context: AgentContext, finalResponse: string): OrchestrationResult => {
+  const message = context.message.toLowerCase()
+  const text = finalResponse.trim() || context.message
+  const practicalStay = context.stage === 'check-out' || /check-?out|key|wifi|wi-fi|door|doorway|luggage|arrival|check-?in/.test(message)
+  const localDiscovery = /greenwich|museum|restaurant|lunch|dinner|transport|market/.test(message)
+  const problem = /cold|broken|not working|problem|heating|smoke|flood|locked out/.test(message)
+  const checkout = context.stage === 'check-out' || /check-?out|checkout|keys|departure/.test(message)
+  const review = context.stage === 'review-follow-up' || context.eventType === 'review-event'
+  const relationship = !practicalStay && !localDiscovery && !problem && !checkout && !review
+  const intents: Intent[] = [
+    practicalStay ? 'practical-stay' : null,
+    localDiscovery ? 'local-discovery' : null,
+    problem ? 'problem' : null,
+    relationship ? 'relationship' : null,
+    checkout ? 'checkout' : null,
+    review ? 'review' : null,
+  ].filter((intent): intent is Intent => intent !== null)
+  const selectedAgent = problem
+    ? 'problem-solver'
+    : localDiscovery
+      ? 'local-guide'
+      : review || relationship
+        ? 'guest-experience'
+        : 'front-desk'
+
+  return {
+    decision: {
+      traceId: `trace-${randomUUID()}`,
+      intents: intents.length ? intents : ['relationship'],
+      sentiment: 'neutral',
+      severity: problem ? 'medium' : 'low',
+      rationale: 'Plain-text A2A output was translated into the frontend orchestration contract.',
+      activations: [
+        {
+          agentId: 'head-butler',
+          status: 'done',
+          task: 'Interpret context and select only relevant specialists',
+          result: 'Selected 1 specialist',
+        },
+        {
+          agentId: 'guest-memory',
+          status: 'skipped',
+          task: 'Validate and save useful guest context',
+        },
+        {
+          agentId: 'front-desk',
+          status: selectedAgent === 'front-desk' ? 'done' : 'skipped',
+          task: 'Answer from verified property information',
+          selectedBecause: practicalStay || checkout ? 'The request needs practical stay information.' : undefined,
+          result: selectedAgent === 'front-desk' ? text : undefined,
+        },
+        {
+          agentId: 'guest-experience',
+          status: selectedAgent === 'guest-experience' ? 'done' : 'skipped',
+          task: 'Shape contextual hospitality care',
+          selectedBecause: review || relationship ? 'The message needs hospitality tone and relationship care.' : undefined,
+          result: selectedAgent === 'guest-experience' ? text : undefined,
+        },
+        {
+          agentId: 'local-guide',
+          status: selectedAgent === 'local-guide' ? 'done' : 'skipped',
+          task: 'Build a grounded local suggestion',
+          selectedBecause: localDiscovery ? 'The request asks for a local recommendation.' : undefined,
+          result: selectedAgent === 'local-guide' ? text : undefined,
+        },
+        {
+          agentId: 'problem-solver',
+          status: selectedAgent === 'problem-solver' ? 'done' : 'skipped',
+          task: 'Assess severity, recovery, and escalation',
+          selectedBecause: problem ? 'The message reports a problem.' : undefined,
+          result: selectedAgent === 'problem-solver' ? text : undefined,
+        },
+      ],
+    },
+    contributions: selectedAgent === 'front-desk'
+      ? [{
+          agentId: 'front-desk',
+          intent: checkout ? 'checkout' : 'practical-stay',
+          summary: text,
+          responseParts: [text],
+        }]
+      : selectedAgent === 'local-guide'
+        ? [{
+            agentId: 'local-guide',
+            intent: 'local-discovery',
+            summary: text,
+            responseParts: [text],
+          }]
+        : selectedAgent === 'problem-solver'
+          ? [{
+              agentId: 'problem-solver',
+              intent: 'problem',
+              summary: text,
+              responseParts: [text],
+            }]
+          : [{
+              agentId: 'guest-experience',
+              intent: review ? 'review' : 'relationship',
+              summary: text,
+              responseParts: [text],
+            }],
+    finalResponse: text,
+    memory: context.memory,
+  }
 }
 
 const isStringArray = (value: unknown) => Array.isArray(value) && value.every((item) => typeof item === 'string')
@@ -180,23 +292,13 @@ const errorEvent = (
   retryable: boolean,
 ): OrchestrationStreamEvent => ({ type: 'error', error: { code, message, retryable } })
 
-const finalEventFromText = (text: string): OrchestrationStreamEvent => {
-  let result: unknown
-  try {
-    result = text ? parseAgentJson(text) : null
-  } catch {
-    result = null
-  }
-  return isOrchestrationResult(result)
-    ? { type: 'final', result }
-    : errorEvent(
-        'malformed_a2a_result',
-        'The orchestration agent returned an unexpected response.',
-        true,
-      )
+const finalEventFromText = (context: AgentContext, text: string): OrchestrationStreamEvent => {
+  const result = parseAgentJson(text)
+  if (isOrchestrationResult(result)) return { type: 'final', result }
+  return { type: 'final', result: buildPlainTextResult(context, text) }
 }
 
-export const translateA2aPayload = (payload: unknown): OrchestrationStreamEvent => {
+export const translateA2aPayload = (payload: unknown, context?: AgentContext): OrchestrationStreamEvent => {
   if (!isRecord(payload) || payload.jsonrpc !== '2.0') {
     return errorEvent('malformed_response', 'The orchestration service returned an unexpected response.', true)
   }
@@ -212,13 +314,23 @@ export const translateA2aPayload = (payload: unknown): OrchestrationStreamEvent 
   if (!isRecord(result)) {
     return errorEvent('malformed_a2a_result', 'The orchestration agent returned an unexpected response.', true)
   }
-  if (result.kind === 'message') return finalEventFromText(textFromParts(result.parts))
+  if (result.kind === 'message') {
+    if (!context) {
+      return errorEvent('malformed_a2a_result', 'The orchestration agent returned an unexpected response.', true)
+    }
+    return finalEventFromText(context, textFromParts(result.parts))
+  }
   if (result.kind !== 'task' || !isRecord(result.status) || typeof result.status.state !== 'string') {
     return errorEvent('malformed_a2a_result', 'The orchestration agent returned an unexpected response.', true)
   }
 
   const state = result.status.state.toLowerCase()
-  if (state === 'completed') return finalEventFromText(textFromCompletedTask(result))
+  if (state === 'completed') {
+    if (!context) {
+      return errorEvent('malformed_a2a_result', 'The orchestration agent returned an unexpected response.', true)
+    }
+    return finalEventFromText(context, textFromCompletedTask(result))
+  }
   if (state === 'failed') {
     return errorEvent('a2a_task_failed', 'The Manyfold orchestration task failed safely.', true)
   }
@@ -402,7 +514,7 @@ export default async function handler(request: IncomingMessage, response: Server
   }
 
   if (upstream.ok) {
-    writeNdjson(response, 200, translateA2aPayload(payload))
+    writeNdjson(response, 200, translateA2aPayload(payload, context))
     return
   }
 

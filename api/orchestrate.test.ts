@@ -28,6 +28,15 @@ const orchestrationResult: OrchestrationResult = {
 
 const textPart = (value: unknown) => ({ kind: 'text', text: JSON.stringify(value) })
 const rpc = (result: unknown) => ({ jsonrpc: '2.0', id: 'rpc-1', result })
+const checkoutContext = {
+  message: 'What time is check-out?',
+  stage: 'check-out',
+  eventType: 'guest-message',
+  now: '2026-08-10T20:00:00.000Z',
+  guest: sampleGuest,
+  property: sampleProperty,
+  memory: emptyMemory,
+} as const
 
 describe('Manyfold A2A response translation', () => {
   it('accepts an A2A Message containing the structured orchestration result', () => {
@@ -36,7 +45,7 @@ describe('Manyfold A2A response translation', () => {
       messageId: 'message-1',
       role: 'agent',
       parts: [textPart(orchestrationResult)],
-    }))).toEqual({ type: 'final', result: orchestrationResult })
+    }), checkoutContext)).toEqual({ type: 'final', result: orchestrationResult })
   })
 
   it('accepts a completed Task artifact', () => {
@@ -45,7 +54,7 @@ describe('Manyfold A2A response translation', () => {
       id: 'task-1',
       status: { state: 'completed' },
       artifacts: [{ artifactId: 'artifact-1', parts: [textPart(orchestrationResult)] }],
-    }))).toEqual({ type: 'final', result: orchestrationResult })
+    }), checkoutContext)).toEqual({ type: 'final', result: orchestrationResult })
   })
 
   it('accepts a completed Task status message when no artifact is present', () => {
@@ -56,7 +65,27 @@ describe('Manyfold A2A response translation', () => {
         state: 'completed',
         message: { kind: 'message', parts: [textPart(orchestrationResult)] },
       },
-    }))).toEqual({ type: 'final', result: orchestrationResult })
+    }), checkoutContext)).toEqual({ type: 'final', result: orchestrationResult })
+  })
+
+  it('accepts a plain-text completed Task by preserving the frontend contract', () => {
+    expect(translateA2aPayload(rpc({
+      kind: 'task',
+      id: 'task-plain-text',
+      status: { state: 'completed' },
+      artifacts: [{ artifactId: 'artifact-plain-text', parts: [{ kind: 'text', text: 'Check-out is by 11:00 AM.' }] }],
+    }), checkoutContext)).toEqual({
+      type: 'final',
+      result: expect.objectContaining({
+        finalResponse: 'Check-out is by 11:00 AM.',
+        decision: expect.objectContaining({
+          activations: expect.arrayContaining([
+            expect.objectContaining({ agentId: 'head-butler', status: 'done' }),
+            expect.objectContaining({ agentId: 'front-desk', status: 'done' }),
+          ]),
+        }),
+      }),
+    })
   })
 
   it.each([
