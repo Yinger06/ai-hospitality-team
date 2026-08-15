@@ -92,17 +92,25 @@ describe('Manyfold A2A response translation', () => {
     }), checkoutContext)).toEqual({ type: 'final', result: embeddedOrchestrationResult })
   })
 
-  it('accepts a plain-text completed Task by preserving the frontend contract', () => {
+  it('rejects a plain-text completed Task with no recoverable orchestration result', () => {
     expect(translateA2aPayload(rpc({
       kind: 'task',
       id: 'task-plain-text',
       status: { state: 'completed' },
-      artifacts: [{ artifactId: 'artifact-plain-text', parts: [{ kind: 'text', text: 'Check-out is by 11:00 AM.' }] }],
-    }), checkoutContext)).toEqual({
-      type: 'final',
-      result: expect.objectContaining({
-        finalResponse: 'Check-out is by 11:00 AM.',
-      }),
+      artifacts: [{
+        artifactId: 'artifact-plain-text',
+        parts: [{
+          kind: 'text',
+          text: [
+            "I’m treating this as an A2A orchestration request.",
+            'First step is to read the orchestrator skill.',
+            'Check-out is by 11:00 AM.',
+          ].join('\n'),
+        }],
+      }],
+    }), checkoutContext)).toMatchObject({
+      type: 'error',
+      error: { code: 'malformed_a2a_result', retryable: true },
     })
   })
 
