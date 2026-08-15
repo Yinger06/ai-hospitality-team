@@ -149,6 +149,56 @@ const parseAgentJson = (value: string) => {
   }
 }
 
+const extractJsonObjects = (text: string) => {
+  const candidates: string[] = []
+  let depth = 0
+  let start = -1
+  let inString = false
+  let escaped = false
+
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index]
+    if (inString) {
+      if (escaped) {
+        escaped = false
+      } else if (char === '\\') {
+        escaped = true
+      } else if (char === '"') {
+        inString = false
+      }
+      continue
+    }
+    if (char === '"') {
+      inString = true
+      continue
+    }
+    if (char === '{') {
+      if (depth === 0) start = index
+      depth += 1
+      continue
+    }
+    if (char === '}' && depth > 0) {
+      depth -= 1
+      if (depth === 0 && start >= 0) {
+        candidates.push(text.slice(start, index + 1))
+        start = -1
+      }
+    }
+  }
+
+  return candidates
+}
+
+const parseEmbeddedOrchestrationResult = (text: string) => {
+  const direct = parseAgentJson(text)
+  if (isOrchestrationResult(direct)) return direct
+  for (const candidate of extractJsonObjects(text)) {
+    const parsed = parseAgentJson(candidate)
+    if (isOrchestrationResult(parsed)) return parsed
+  }
+  return null
+}
+
 const buildPlainTextResult = (context: AgentContext, finalResponse: string): OrchestrationResult => {
   const message = context.message.toLowerCase()
   const text = finalResponse.trim() || context.message
@@ -293,7 +343,7 @@ const errorEvent = (
 ): OrchestrationStreamEvent => ({ type: 'error', error: { code, message, retryable } })
 
 const finalEventFromText = (context: AgentContext, text: string): OrchestrationStreamEvent => {
-  const result = parseAgentJson(text)
+  const result = parseEmbeddedOrchestrationResult(text)
   if (isOrchestrationResult(result)) return { type: 'final', result }
   return { type: 'final', result: buildPlainTextResult(context, text) }
 }

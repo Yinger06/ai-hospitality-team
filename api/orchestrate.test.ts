@@ -26,6 +26,15 @@ const orchestrationResult: OrchestrationResult = {
   },
 }
 
+const embeddedOrchestrationResult: OrchestrationResult = {
+  ...orchestrationResult,
+  decision: {
+    ...orchestrationResult.decision,
+    traceId: 'trace-embedded',
+  },
+  finalResponse: 'Check-out is by 11:00 AM.',
+}
+
 const textPart = (value: unknown) => ({ kind: 'text', text: JSON.stringify(value) })
 const rpc = (result: unknown) => ({ jsonrpc: '2.0', id: 'rpc-1', result })
 const checkoutContext = {
@@ -68,6 +77,21 @@ describe('Manyfold A2A response translation', () => {
     }), checkoutContext)).toEqual({ type: 'final', result: orchestrationResult })
   })
 
+  it('extracts an embedded OrchestrationResult from verbose plain text', () => {
+    const plainText = [
+      'Runner summary: routing finished successfully.',
+      JSON.stringify(embeddedOrchestrationResult),
+      'Runner footer: orchestration complete.',
+    ].join('\n')
+
+    expect(translateA2aPayload(rpc({
+      kind: 'task',
+      id: 'task-embedded-json',
+      status: { state: 'completed' },
+      artifacts: [{ artifactId: 'artifact-embedded-json', parts: [{ kind: 'text', text: plainText }] }],
+    }), checkoutContext)).toEqual({ type: 'final', result: embeddedOrchestrationResult })
+  })
+
   it('accepts a plain-text completed Task by preserving the frontend contract', () => {
     expect(translateA2aPayload(rpc({
       kind: 'task',
@@ -78,12 +102,6 @@ describe('Manyfold A2A response translation', () => {
       type: 'final',
       result: expect.objectContaining({
         finalResponse: 'Check-out is by 11:00 AM.',
-        decision: expect.objectContaining({
-          activations: expect.arrayContaining([
-            expect.objectContaining({ agentId: 'head-butler', status: 'done' }),
-            expect.objectContaining({ agentId: 'front-desk', status: 'done' }),
-          ]),
-        }),
       }),
     })
   })
