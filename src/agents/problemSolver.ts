@@ -40,8 +40,8 @@ export const problemSolverAgent: SpecialistAgent = {
     }
     const urgent = severity === 'urgent'
     const response = urgent
-      ? `I’m sorry — your safety comes first. Please leave the immediate area if needed and call emergency services on 999. I’ve alerted ${context.property.hostName} for immediate human support.`
-      : `I’m sorry about the ${guestFacingIssue[summary]}. I’ve flagged it to ${context.property.hostName} now, and she’ll check it in person rather than leave you troubleshooting it.`
+      ? `I’m sorry — your safety comes first. Please leave the immediate area if needed and call emergency services on 999. I’ve alerted ${context.property.hostName}, your host, for immediate human support.`
+      : `I’m sorry about the ${guestFacingIssue[summary]}. I’ve flagged it to ${context.property.hostName}, your host, now, and it will be checked in person rather than leave you troubleshooting it.`
 
     return {
       agentId: 'problem-solver',

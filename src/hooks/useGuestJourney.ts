@@ -49,7 +49,7 @@ const initialMessages: ChatMessage[] = [
   {
     id: 'booking-welcome',
     sender: 'host',
-    body: 'Hi Maya — thank you for choosing Primrose House. Mia and the house team are looking forward to welcoming you and Leo to London. The blue door is already looking forward to your arrival.',
+    body: 'Hi Maya — thank you for choosing Primrose House. The Head Butler and house team are looking forward to welcoming you and Leo to London. The blue door is already looking forward to your arrival.',
     timestamp: 'Just now',
     stage: 'booking-confirmed',
     label: 'Sample welcome · fixture',
@@ -187,7 +187,7 @@ export const useGuestJourney = () => {
       const safeHandoff: ChatMessage = {
         id: `out-${now.getTime()}`,
         sender: 'host',
-        body: `I’m sorry, ${sampleGuest.name.split(' ')[0]} — I can’t safely complete that request right now. I’m asking ${property.hostName} to review your message. If this is urgent, please call ${property.emergencyPhone}.`,
+        body: `I’m sorry, ${sampleGuest.name.split(' ')[0]} — I can’t safely complete that request right now. I’m asking ${property.hostName}, your host, to review your message. If this is urgent, please call ${property.emergencyPhone}.`,
         timestamp: 'Just now',
         stage: nextStage,
         label: 'Human handoff required',

@@ -49,14 +49,14 @@ export const guestExperienceAgent: SpecialistAgent = {
     let summary = 'Adjusted tone to match the guest’s experience'
 
     if (context.eventType === 'booking-event') {
-      parts.push(`Hi ${firstName} — thank you for choosing ${context.property.name}. ${context.property.hostName} and the house team are looking forward to welcoming you and Leo to London. ${voice.welcome}`)
+      parts.push(`Hi ${firstName} — thank you for choosing ${context.property.name}. The Head Butler and house team are looking forward to welcoming you and Leo to London. ${voice.welcome}`)
       summary = 'Wrote a warm, personal booking welcome'
     } else if (context.eventType === 'review-event') {
       if (sentiment === 'positive') {
         parts.push(`Thank you, ${firstName}! It was such a pleasure hosting you and Leo. I’m glad the shower wobble was only a small chapter in a lovely stay. ${voice.reviewReply}`)
         summary = 'Prepared a personal response to a positive review'
       } else {
-        parts.push(`Thank you for sharing this, ${firstName}. I’m sorry we missed the mark. ${context.property.hostName} is reviewing what happened and will follow up with you directly.`)
+        parts.push(`Thank you for sharing this, ${firstName}. I’m sorry we missed the mark. The host team is reviewing what happened and will follow up with you directly.`)
         summary = 'Acknowledged a negative review without being defensive'
       }
     } else if (context.eventType === 'host-action' && context.stage === 'problem-resolution') {
@@ -64,7 +64,7 @@ export const guestExperienceAgent: SpecialistAgent = {
       summary = 'Turned the host fix into an empathetic recovery follow-up'
     } else if (context.eventType === 'host-action' && context.stage === 'review-follow-up') {
       if (hasUnresolvedIssue(context.memory.issues)) {
-        parts.push(`I’m holding the review request for now because there’s still an unresolved stay issue. ${context.property.hostName} should follow up personally first.`)
+        parts.push('I’m holding the review request for now because there’s still an unresolved stay issue. The host should follow up personally first.')
         summary = 'Held review request due to an unresolved issue'
       } else {
         const memoryMoment = context.memory.visitedPlaces.includes('British Museum')

@@ -74,7 +74,7 @@ export const demoJourney: DemoStep[] = [
     label: 'Pre-arrival',
     stage: 'pre-arrival',
     kind: 'guest',
-    message: 'Hi Mia! Leo and I land at Heathrow around 12:30. We prefer a quiet room if possible, and is it okay to leave our bags before check-in?',
+    message: 'Hi Primrose House team — Leo and I land at Heathrow around 12:30. We prefer a quiet room if possible, and is it okay to leave our bags before check-in?',
     helper: 'Memory + Front Desk + Guest Experience',
   },
   {
@@ -138,7 +138,7 @@ export const demoJourney: DemoStep[] = [
     label: 'Review received',
     stage: 'review-follow-up',
     kind: 'review',
-    message: 'Five stars — a lovely little stay, and Mia fixed the shower so quickly. We would happily come back!',
+    message: 'Five stars — a lovely little stay, and the house team fixed the shower so quickly. We would happily come back!',
     helper: 'Guest Experience writes a personal response',
   },
 ]

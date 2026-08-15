@@ -53,7 +53,7 @@ export const AppHeader = ({ property, onPersonalityChange, onOpenMobileNav }: Ap
         <BellRing size={18} />
         <span />
       </button>
-      <span className="host-avatar" aria-label={`${property.hostName}, host`}>MA</span>
+      <span className="host-avatar" aria-label="Human host contact">MA</span>
     </div>
   </header>
 )
